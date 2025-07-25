@@ -375,9 +375,9 @@
         function showMessage(msg, duration = 5000) {
             messageDiv.innerText = msg;
             messageDiv.classList.add('show');
-            setTimeout(() => {
-                messageDiv.classList.remove('show');
-            }, duration);
+            // setTimeout(() => { // 팝업이 사라지지 않도록 이 줄을 주석 처리
+            //     messageDiv.classList.remove('show');
+            // }, duration);
         }
 
         /**
@@ -388,32 +388,20 @@
             // 현재 상태를 기록 (Undo를 위해)
             saveState();
 
-            // 12단계가 마지막이므로, 12단계를 초과하면 더 이상 진행할 수 없음을 알림
-            if (currentStep > bettingData.length) {
-                showMessage('모든 단계를 완료했습니다. 초기화 버튼을 눌러주세요.');
+            // 12단계가 마지막이므로, 12단계를 초과하면 더 이상 진행할 수 없음을 알림 (단, 12단계 패배 후 1단계로 리셋되는 경우는 제외)
+            if (currentStep > bettingData.length && result === 'win') { // 12단계 초과 상태에서 승리 클릭 시
+                showMessage('모든 단계를 완료했거나, 12단계 승리 후 다음 베팅 금액이 설정되어 있습니다. 초기화 버튼을 눌러주세요.');
                 return;
             }
-            // 12단계에서 승리했는데 2연승 미달일 경우, 다음 베팅금액을 2배로 계산해도 12단계 내에서만 적용됨
-            // 12단계에서 패배 시 currentStep이 13이 되므로, 다음부터는 '모든 단계를 완료했습니다' 메시지 표시
-            if (currentStep === bettingData.length && result === 'lose') {
-                 // 12단계에서 패배하여 13단계로 넘어갈 경우 (더 이상 단계 없음)
-                 currentStep++; // 단계는 증가시키고, 메시지로 완료 알림
-                 cumulativeProfit -= currentBetAmount; // 최종 손실 반영
-                 consecutiveWins = 0; // 연속 승리 초기화
-                 currentBetAmount = 0; // 더 이상 베팅할 금액이 없음
-                 showMessage(`${bettingData.length}단계에서 패배! 모든 단계를 완료했습니다. 초기화해주세요.`);
-                 updateUI();
-                 return;
-            }
 
-
-            const betAmountThisTurn = currentBetAmount; // 현재 베팅 금액을 이 턴의 이득 계산에 사용
-            let turnProfitFromBet = 0; // 이 턴에서 발생한 실제 베팅 이득/손실
+            const betAmountThisTurn = currentBetAmount; // 현재 베팅 금액을 이 턴의 '패' 값으로 사용
 
             if (result === 'win') {
-                turnProfitFromBet = betAmountThisTurn; // 승리 시 이득은 베팅 금액과 동일 (2배 획득 - 1배 베팅)
+                // 승리 시 이득은 베팅 금액과 동일 (2배 획득 - 1배 베팅). 즉, net profit은 베팅 금액과 동일
+                const turnProfitFromBet = betAmountThisTurn; 
+
                 accumulatedPoints += turnProfitFromBet; // 적립 포인트는 실제 베팅 이득으로 항상 증가
-                cumulativeProfit += turnProfitFromBet; // 누적 손익에 실제 이득 반영 (이전 로직)
+                cumulativeProfit += turnProfitFromBet; // 누적 손익에 실제 이득 반영
                 
                 consecutiveWins++; // 연속 승리 증가
 
@@ -424,13 +412,13 @@
                     currentStep = 1;
                     currentBetAmount = bettingData[0]['패'];
                     consecutiveWins = 0;
-                } else {
+                } else { // 2연승이 아닌 승리일 경우 (다음 단계로 넘어가지 않고 현재 단계 유지)
                     message += ` 연속 승리: ${consecutiveWins}회.`;
-                    // 12단계에서 승리했으나 2연승이 아닌 경우
-                    if (currentStep < bettingData.length) { // 12단계 미만일 때만 다음 베팅 금액을 2배로
-                       currentBetAmount *= 2; // 다음 베팅 금액은 현재 베팅 금액의 2배 (2연승이 아닐 때)
-                    } else { // 12단계에서 2연승이 아닌 승리일 경우, 다음 베팅 금액은 12단계 '패' 금액 유지 (혹은 0)
-                        currentBetAmount = bettingData[currentStep-1]['패']; // 12단계 승리 후 1단계로 리셋되지 않았으므로 12단계의 베팅 금액 유지
+                    // 12단계 (마지막 단계)에서 승리했으나 2연승이 아닌 경우, 다음 베팅 금액을 해당 단계의 '승' 값으로 설정
+                    if (currentStep === bettingData.length) {
+                        currentBetAmount = bettingData[currentStep-1]['승']; // 12단계의 '승' 값인 134로 설정
+                    } else { // 12단계 미만일 때 (다른 단계) 2연승이 아닌 승리 시
+                       currentBetAmount = betAmountThisTurn * 2; // 다음 베팅 금액은 현재 베팅 금액의 2배
                     }
                 }
                 
@@ -449,24 +437,25 @@
                 showMessage(message, 7000); // 관련 메시지 표시
 
             } else if (result === 'lose') {
-                turnProfitFromBet = -betAmountThisTurn; // 패배 시 손실은 베팅 금액
-                cumulativeProfit += turnProfitFromBet; // 누적 손익에 실제 손실 반영
+                const turnLossFromBet = -betAmountThisTurn; // 패배 시 손실은 베팅 금액
+                cumulativeProfit += turnLossFromBet; // 누적 손익에 실제 손실 반영
                 consecutiveWins = 0; // 패배 시 연속 승리 초기화
                 
-                currentStep++; // 패배 시 다음 단계로 이동
+                let message = `${currentStep}단계에서 패배! (손실: ${-turnLossFromBet}). 연속 승리가 초기화됩니다.`; // Message before incrementing step
 
-                let message = `${currentStep - 1}단계에서 패배! (손실: ${-turnProfitFromBet}). 연속 승리가 초기화됩니다.`;
-                if (currentStep > bettingData.length) {
-                    message += ` 모든 단계(${bettingData.length}단계)를 완료했습니다. 더 이상 진행할 수 없습니다. 초기화해주세요.`;
-                    currentBetAmount = 0; // 더 이상 베팅할 금액이 없음
-                } else {
-                    currentBetAmount = bettingData[currentStep - 1]['패']; // 패배 시 다음 베팅 금액은 다음 단계의 '패' 금액
+                if (currentStep === bettingData.length) { // 마지막 단계(12단계)에서 패배 시
+                    currentStep = 1; // 1단계로 재설정
+                    currentBetAmount = bettingData[0]['패']; // 1단계의 '패' 금액으로 설정
+                    message += ` 마지막 단계(${bettingData.length}단계)에서 패배하여 1단계로 재설정됩니다.`;
+                } else { // 12단계 미만에서 패배 시 다음 단계로 이동
+                    currentStep++; 
+                    currentBetAmount = bettingData[currentStep - 1]['패']; // 다음 베팅 금액은 다음 단계의 '패' 금액
                 }
                 showMessage(message);
 
                 // 현재 턴 손익 UI 업데이트 (실제 베팅 손실을 표시)
-                currentTurnProfitSpan.innerText = turnProfitFromBet;
-                if (turnProfitFromBet < 0) {
+                currentTurnProfitSpan.innerText = turnLossFromBet;
+                if (turnLossFromBet < 0) {
                     currentTurnProfitSpan.classList.remove('positive');
                     currentTurnProfitSpan.classList.add('negative');
                     currentTurnProfitSpan.style.color = '#f44336';
